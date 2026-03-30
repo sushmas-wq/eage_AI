@@ -1,0 +1,10 @@
+.vscode/
+__pycache__/
+*.pyc
+mlplants/.venv/
+folder_baseline/.venv/
+mlplants/ab.pth/
+mlplants/best_model1_a.pth/
+mlplants/best_modela.pth/
+mlplants/best_model4.pth/
+env/
