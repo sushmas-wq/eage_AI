@@ -20,6 +20,7 @@ assert img is not None, "Image not found"
 
 # ==============================
 # 1️⃣ WEAK GREEN SEED
+
 # ==============================
 hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
 
