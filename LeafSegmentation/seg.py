@@ -101,7 +101,7 @@ def segment_leaves_seeded(img_bgr, min_area=4000):
 
     return final_mask, segmented
 
-base_path = r"C:\Users\sushm\OneDrive\Documents\2\2\train\\"
+base_path = r"D:\2\train\Wheat\wheat"
 
 for folder_name in os.listdir(base_path):
     folder_path = os.path.join(base_path, folder_name)
@@ -129,16 +129,16 @@ for folder_name in os.listdir(base_path):
             break
 
         # create folders
-        mask_dir = os.path.join("D:/data/masks", folder_name)
-        img_dir = os.path.join("D:/data/images", folder_name)
-        seg_dir = os.path.join("D:/data/segmented", folder_name)
+        mask_dir = os.path.join(f"D:/data/masks", folder_name)
+        img_dir = os.path.join(f"D:/data/images", folder_name)
+        seg_dir = os.path.join(f"D:/data/segmented", folder_name)
 
         os.makedirs(mask_dir, exist_ok=True)
         os.makedirs(img_dir, exist_ok=True)
         os.makedirs(seg_dir, exist_ok=True)
         # save
-        cv2.imwrite(os.path.join(mask_dir, f"{i}.png"), mask)
-        cv2.imwrite(os.path.join(img_dir, f"{i}.png"), img)
-        cv2.imwrite(os.path.join(seg_dir, f"{i}.png"), segmented)
+        cv2.imwrite(os.path.join(mask_dir, f"{folder_name}_{i}.png"), mask)
+        cv2.imwrite(os.path.join(img_dir, f"{folder_name}_{i}.png"), img)
+        cv2.imwrite(os.path.join(seg_dir, f"{folder_name}_{i}.png"), segmented)
 
         i += 1
