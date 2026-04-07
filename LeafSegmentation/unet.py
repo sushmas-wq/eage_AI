@@ -288,8 +288,11 @@ class DataAugmentationPipeline:
         n_samples = len(images)
         indices = np.arange(n_samples)
         np.random.shuffle(indices)
-        
-        for start_idx in range(0, n_samples, batch_size):
+        while True:   
+         indices = np.arange(n_samples)
+         np.random.shuffle(indices)
+
+         for start_idx in range(0, n_samples, batch_size):
             batch_indices = indices[start_idx:start_idx + batch_size]
             
             X_batch = images[batch_indices]
@@ -322,7 +325,7 @@ class UNetTrainer:
         self.history = None
     
     def train(self, X_train, y_train, X_val, y_val, 
-              epochs=50, batch_size=16, use_augmentation=True):
+              epochs=10,batch_size=8, use_augmentation=True):
         """
         Train the model.
         
@@ -435,8 +438,6 @@ class UNetTrainer:
 # ============================================================================
 
 class UNetPredictor:
-    """Make predictions with trained U-Net"""
-    
     def __init__(self, model_path=None, model=None, img_size=256):
         """
         Initialize predictor.
@@ -546,6 +547,7 @@ class UNetPredictor:
             print(f"✓ Visualization saved: {save_path}")
         
         plt.show()
+    
 
 
 # ============================================================================
@@ -582,8 +584,8 @@ if __name__ == "__main__":
         history = trainer.train(
             data['X_train'], data['y_train'],
             data['X_val'], data['y_val'],
-            epochs=50,
-            batch_size=16,
+            epochs=10,
+            batch_size=2,
             use_augmentation=True
         )
         

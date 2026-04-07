@@ -77,40 +77,107 @@ def load_disease_model(crop):
 # SEGMENTATION
 # =============================
 
-def segment_leaf(img_bgr):
+def segment_leaf(img_bgr, min_area=4000):
+    # 1️  Weak green seed (very permissive)
     hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
+  # GREEN
+    lower_green = np.array([25, 20, 20])   # VERY loose
+    upper_green = np.array([95, 255, 255])
+  
+ 
 
-    # Leaf = green + yellow + brown + pale
-    lower_leaf = np.array([0, 20, 20])
-    upper_leaf = np.array([180, 255, 255])
+ # YELLOW
+    lower_yellow = np.array([15, 40, 40])
+    upper_yellow = np.array([35, 255, 255])
 
-    mask = cv2.inRange(hsv, lower_leaf, upper_leaf)
+ # BROWN (low saturation, darker)
+    lower_brown = np.array([5, 50, 20])
+    upper_brown = np.array([20, 255, 200])
 
-    # Remove obvious background using saturation
-    sat = hsv[:, :, 1]
-    mask[sat < 25] = 0   # removes sky, white table, paper
+ # RED (two ranges in HSV)
+    lower_red1 = np.array([0, 50, 50])
+    upper_red1 = np.array([10, 255, 255])
 
-    # Morphological cleanup
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (11, 11))
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+    lower_red2 = np.array([170, 50, 50])
+    upper_red2 = np.array([180, 255, 255])
 
-    # Keep largest connected component (main leaf)
+ # DARK / BLACK (diseased spots)
+    lower_dark = np.array([0, 0, 0])
+    upper_dark = np.array([180, 255, 60])
+
+ # PALE / WHITE
+
+    lower_white = np.array([0, 0, 180])
+    upper_white = np.array([180, 40, 255])
+
+    # seed = cv2.inRange(hsv, lower_green, upper_green)
+    mask_green = cv2.inRange(hsv, lower_green, upper_green)
+    mask_yellow = cv2.inRange(hsv, lower_yellow, upper_yellow)
+    mask_brown = cv2.inRange(hsv, lower_brown, upper_brown)
+    mask_red1 = cv2.inRange(hsv, lower_red1, upper_red1)
+    mask_red2 = cv2.inRange(hsv, lower_red2, upper_red2)
+    mask_dark = cv2.inRange(hsv, lower_dark, upper_dark)
+    mask_white = cv2.inRange(hsv, lower_white, upper_white)
+
+    seed = (mask_green | mask_yellow | mask_brown |
+        mask_red1 | mask_red2 | mask_dark | mask_white)
+
+    # Clean seed a bit
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7,7))
+    seed = cv2.morphologyEx(seed, cv2.MORPH_OPEN, kernel)
+    seed = cv2.morphologyEx(seed, cv2.MORPH_CLOSE, kernel)
+
+    # 2️  Initialize GrabCut mask
+    h, w = seed.shape
+
+    gc_mask = np.full((h, w), cv2.GC_PR_BGD, dtype=np.uint8)
+
+# mark probable foreground
+    gc_mask[seed > 0] = cv2.GC_PR_FGD
+
+#  FORCE definite foreground (center region)
+    gc_mask[h//4:3*h//4, w//4:3*w//4][seed[h//4:3*h//4, w//4:3*w//4] > 0] = cv2.GC_FGD
+
+    gc_mask[:10, :] = cv2.GC_BGD
+    gc_mask[-10:, :] = cv2.GC_BGD
+    gc_mask[:, :10] = cv2.GC_BGD
+    gc_mask[:, -10:] = cv2.GC_BGD
+    # 3️⃣ Run GrabCut (color used internally, but shape dominates)
+    bgdModel = np.zeros((1, 65), np.float64)
+    fgdModel = np.zeros((1, 65), np.float64)
+
+    cv2.grabCut(
+        img_bgr,
+        gc_mask,
+        None,
+        bgdModel,
+        fgdModel,
+        iterCount=5,
+        mode=cv2.GC_INIT_WITH_MASK
+    )
+
+    # 4️  Extract foreground
+    mask = np.where(
+        (gc_mask == cv2.GC_FGD) | (gc_mask == cv2.GC_PR_FGD),
+        255,
+        0
+    ).astype("uint8")
+
+    
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    if not contours:
-        return mask, img_bgr
+    final_mask = np.zeros_like(mask)
 
-    largest = max(contours, key=cv2.contourArea)
-    clean_mask = np.zeros_like(mask)
-    cv2.drawContours(clean_mask, [largest], -1, 255, -1)
+    for c in contours:
+        if cv2.contourArea(c) >= min_area:
+            cv2.drawContours(final_mask, [c], -1, 255, -1)
 
-    segmented = cv2.bitwise_and(img_bgr, img_bgr, mask=clean_mask)
-    return clean_mask, segmented
+    segmented = cv2.bitwise_and(img_bgr, img_bgr, mask=final_mask)
+
+    return final_mask, segmented
 
 
-
-# =============================
-# DISEASE PIXELS
+# ============================
+# DISEASE SEGMENTATION
 # =============================
 def brown_disease_mask(segmented, leaf_mask):
     hsv = cv2.cvtColor(segmented, cv2.COLOR_BGR2HSV)

@@ -118,6 +118,7 @@ for folder_name in os.listdir(base_path):
 
         full_path = os.path.join(folder_path, file)
         img = cv2.imread(full_path)
+        img = cv2.resize(img, (256, 256))
 
         if img is None:
             print("Failed:", full_path)
