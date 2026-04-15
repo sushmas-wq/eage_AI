@@ -8,3 +8,8 @@ mlplants/best_model1_a.pth/
 mlplants/best_modela.pth/
 mlplants/best_model4.pth/
 env/
+LeafSegmentation/leaf_segmentation_model_1.h5/
+LeafSegmentation/leaf_segmentation_model_2.h5/
+LeafSegmentation/leaf_unet_best.h5/
+LeafSegmentation/leaf_unet_best_2.h5/
+LeafSegmentation/leaf_unet_model.h5/
