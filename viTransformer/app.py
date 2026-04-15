@@ -1,3 +1,4 @@
+from multiprocessing.util import info
 import os
 import cv2
 import torch
@@ -8,6 +9,71 @@ import numpy as np
 from torchvision import models, transforms
 from PIL import Image
 from skimage.feature import local_binary_pattern
+import re
+
+
+st.set_page_config(
+    page_title="AgroAI 🌱",
+    page_icon="🌿",
+    layout="wide"
+)
+
+st.markdown("""
+<style>
+/* Background */
+.stApp {
+    background-color: #f4fbf6;
+}
+
+/* Main container */
+.block-container {
+    padding-top: 2rem;
+    padding-bottom: 2rem;
+}
+
+/* Headers */
+h1, h2, h3 {
+    color: #1b5e20;
+    font-weight: 600;
+}
+
+/* Cards */
+.card {
+    background-color: white;
+    padding: 20px;
+    border-radius: 16px;
+    box-shadow: 0px 4px 12px rgba(0,0,0,0.08);
+    margin-bottom: 20px;
+}
+
+/* Buttons */
+.stButton>button {
+    background: linear-gradient(90deg, #43a047, #66bb6a);
+    color: white;
+    border-radius: 10px;
+    height: 3em;
+    width: 100%;
+    font-weight: 600;
+}
+
+/* Success box */
+.stSuccess {
+    border-radius: 12px;
+}
+
+/* Error box */
+.stError {
+    border-radius: 12px;
+}
+
+/* Upload box */
+[data-testid="stFileUploader"] {
+    border: 2px dashed #66bb6a;
+    border-radius: 12px;
+    padding: 10px;
+}
+</style>
+""", unsafe_allow_html=True)
 
 # =============================
 # CONFIG
@@ -15,7 +81,101 @@ from skimage.feature import local_binary_pattern
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 CHECKPOINT_DIR = "checkptc"
 CONF_THRESHOLD = 0.75
-
+#  ===========================
+#  INFO
+# ============================
+infoa = {
+    "healthy": {
+        "title": "Plant appears healthy 🌱",
+        "cause": "No visible disease symptoms detected.",
+        "advice": "Continue regular monitoring and proper irrigation."
+    },
+    "Apple Scab":{
+        "title": "Apple Scab detected 🍏",
+        "cause": "Fungal disease causing dark lesions on leaves and fruit.",
+        "advice": "Remove infected material and apply fungicide."
+    },
+    "Black Rot":{
+        "title": "Black Rot detected 🍎",
+        "cause": "Fungal infection leading to black lesions on leaves and fruit.",
+        "advice": "Prune affected areas and use appropriate fungicides."
+    },
+    "Cedar Apple Rust":{
+        "title": "Cedar Apple Rust detected 🌿",
+        "cause": "Fungal disease requiring both apple and cedar hosts.",
+        "advice": "Remove nearby cedar trees and apply fungicide."
+    },
+    "Cercospora Leaf Spot":{
+        "title": "Cercospora Leaf Spot detected 🌽",
+        "cause": "Fungal infection causing circular spots on leaves.",
+        "advice": "Improve air circulation and apply fungicide."
+    },
+    "Common Rust": {
+        "title": "Common Rust detected 🌽",
+        "cause": "Fungal disease producing rust-colored pustules on leaves.",
+        "advice": "Use resistant varieties and apply fungicide if needed."
+    },"Esca (Black Measles)": {
+        "title": "Esca (Black Measles) detected 🍇",
+        "cause": "Fungal disease affecting grapevines.",
+        "advice": "Remove infected vines and apply appropriate fungicides."
+    },"Haunglongbing (Citrus greening)": {
+        "title": "Haunglongbing (Citrus greening) detected  🍊",
+        "cause": "Bacterial disease spread by psyllid insects.",
+        "advice": "Remove infected trees and control psyllid population."
+    },"Tomato Yellow Leaf Curl Virus": {
+        "title": "Tomato Yellow Leaf Curl Virus detected 🍅",
+        "cause": "Viral disease transmitted by whiteflies.",
+        "advice": "Control whitefly population and remove infected plants."
+    },"Brown Rust": {
+        "title": "Brown Rust detected 🌾",
+        "cause": "Fungal disease producing brown pustules on wheat leaves.",
+        "advice": "Use resistant varieties and apply fungicide if needed."
+    },
+    "Leaf Rust": {
+        "title": "Leaf Rust detected 🍂",
+        "cause": "Fungal disease spread by airborne spores in humid conditions.",
+        "advice": "Remove infected leaves and apply fungicide if needed."
+    },
+    "Powdery mildew": {
+        "title": "Powdery Mildew detected 🌫️",
+        "cause": "Fungus growing on leaf surfaces due to poor air circulation.",
+        "advice": "Improve airflow and apply sulfur-based treatment."
+    },
+    "Bacterial Blight": {
+        "title": "Bacterial Blight detected 🦠",
+        "cause": "Bacterial infection spread via rain splash and tools.",
+        "advice": "Use clean tools and disease-free seeds."
+    },
+    "Leaf Spot": {
+        "title": "Leaf Spot detected 🔴",
+        "cause": "Fungal or bacterial pathogens favored by wet leaves.",
+        "advice": "Avoid overhead watering and improve drainage."
+    },
+    "Late Blight":{
+          "title": "Late Blight detected 🌧️",
+        "cause": "Fungal disease thriving in cool, wet conditions.",
+        "advice": """
+<ul>
+  <li>Remove and destroy infected plant material immediately to reduce spread</li>
+  <li>Apply a bio-enzyme / microbial formulation (such as enzyme-based or beneficial microbe solutions)</li>
+  <li>Ensure good air circulation and avoid overhead irrigation</li>
+  <li>Apply preventively spray during high-humidity periods for best results</li>
+  <li>👉 2–3 ml  of bio-enzyme per liter of water</li>
+  <li>Spray every 10–14 days</li>
+</ul>
+"""
+    },
+    "Early Blight":{
+        "title": "Early Blight detected 🌞",
+        "cause": "Fungal disease favored by warm, dry weather.",
+        "advice": "Remove infected material and apply fungicide."
+    },
+    "Tungro":{
+        "title": "Tungo detected 🌾",
+        "cause": "Caused by Rice Tungro Virus transmitted by green leafhoppers.",
+        "advice": "Remove infected plants, control leafhopper population, and use resistant rice varieties."
+},
+}
 # =============================
 # TRANSFORMS
 # =============================
@@ -79,7 +239,14 @@ def load_disease_model(crop):
 
 def segment_leaf(img_bgr, min_area=4000):
     # 1️  Weak green seed (very permissive)
+    max_size = 512
+    h, w = img_bgr.shape[:2]
+    scale = max_size / max(h, w)
+    if scale < 1:
+        img_bgr = cv2.resize(img_bgr, (int(w*scale), int(h*scale)))
     hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
+    
+
   # GREEN
     lower_green = np.array([25, 20, 20])   # VERY loose
     upper_green = np.array([95, 255, 255])
@@ -107,8 +274,11 @@ def segment_leaf(img_bgr, min_area=4000):
 
  # PALE / WHITE
 
-    lower_white = np.array([0, 0, 180])
-    upper_white = np.array([180, 40, 255])
+    lower_white = np.array([0, 0, 200])
+    upper_white = np.array([180, 30, 255])
+    #dark / black (diseased spots)
+    lower_black = np.array([0, 0, 0])
+    upper_black = np.array([180, 255, 80])
 
     # seed = cv2.inRange(hsv, lower_green, upper_green)
     mask_green = cv2.inRange(hsv, lower_green, upper_green)
@@ -118,9 +288,10 @@ def segment_leaf(img_bgr, min_area=4000):
     mask_red2 = cv2.inRange(hsv, lower_red2, upper_red2)
     mask_dark = cv2.inRange(hsv, lower_dark, upper_dark)
     mask_white = cv2.inRange(hsv, lower_white, upper_white)
+    mask_black = cv2.inRange(hsv, lower_black, upper_black)
 
     seed = (mask_green | mask_yellow | mask_brown |
-        mask_red1 | mask_red2 | mask_dark | mask_white)
+        mask_red1 | mask_red2 | mask_dark | mask_white | mask_black)
 
     # Clean seed a bit
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7,7))
@@ -224,8 +395,9 @@ def disease_color_mask(segmented, leaf_mask):
 
     brown = cv2.inRange(hsv, lower_brown, upper_brown)
     yellow = cv2.inRange(hsv, lower_yellow, upper_yellow)
-
+    black = cv2.inRange(hsv, np.array([0, 0, 0]), np.array([180, 255, 80]))
     color_mask = cv2.bitwise_or(brown, yellow)
+    color_mask = cv2.bitwise_or(color_mask, black)
     color_mask = cv2.bitwise_and(color_mask, color_mask, mask=leaf_mask)
 
     return (color_mask > 0).astype(np.uint8)
@@ -292,21 +464,117 @@ def predict(img_pil, model, classes):
     with torch.no_grad():
         probs = F.softmax(model(x), dim=1)
     idx = probs.argmax(1).item()
-    return classes[idx], probs.max(1)[0].item()
+    return classes[idx], probs.max(1)[0]
+def extract_label_parts(label):
+    
+
+    # Handle PlantVillage formats
+    if "___" in label:
+        disease = label.split("___", 1)[1]
+    elif "__" in label:
+        disease = label.split("__", 1)[1]
+    elif "_" in label:
+        disease = label.split("_", 1)[1]
+    else:
+        disease = label
+
+    # Healthy check
+    if re.search(r"healthy", disease, re.IGNORECASE):
+        return "healthy"
+
+    disease = disease.replace("_", " ").strip()
+    disease = re.sub(r"\s+", " ", disease)
+
+    return disease
+   
+    
+
 
 # =============================
 # STREAMLIT UI
 # =============================
-st.set_page_config(page_title="🌱 Crop & Disease + Severity", layout="centered")
-st.title("🌿 Crop, Disease & Severity Detection")
 
-uploaded = st.file_uploader("Upload leaf image", ["jpg", "png", "jpeg"])
+st.set_page_config(
+    page_title="AgroAI 🌱",
+    page_icon="🌿",
+    layout="wide"
+)
 
-if uploaded:
-    img = Image.open(uploaded).convert("RGB")
+st.markdown("""
+<style>
+/* Background */
+.stApp {
+    background-color: #f4fbf6;
+}
+
+/* Main container */
+.block-container {
+    padding-top: 2rem;
+    padding-bottom: 2rem;
+}
+
+/* Headers */
+h1, h2, h3 {
+    color: #1b5e20;
+    font-weight: 600;
+}
+
+/* Cards */
+.card {
+    background-color: white;
+    padding: 20px;
+    border-radius: 16px;
+    box-shadow: 0px 4px 12px rgba(0,0,0,0.08);
+    margin-bottom: 20px;
+}
+
+/* Buttons */
+.stButton>button {
+    background: linear-gradient(90deg, #43a047, #66bb6a);
+    color: white;
+    border-radius: 10px;
+    height: 3em;
+    width: 100%;
+    font-weight: 600;
+}
+
+/* Success box */
+.stSuccess {
+    border-radius: 12px;
+}
+
+/* Error box */
+.stError {
+    border-radius: 12px;
+}
+
+/* Upload box */
+[data-testid="stFileUploader"] {
+    border: 2px dashed #66bb6a;
+    border-radius: 12px;
+    padding: 10px;
+}
+</style>
+""", unsafe_allow_html=True)
+st.markdown("""
+<div class="card">
+    <h1 style='color: green;'>🌱 AgroAI</h1>
+    <p  style='color: green;'>AI-powered crop & disease detection from real-world field images.</p>
+</div>
+""", unsafe_allow_html=True)
+#2
+st.markdown('<div class="card">', unsafe_allow_html=True)
+
+uploaded_file = st.file_uploader("📤 Upload a leaf image", type=["jpg", "png"])
+
+st.markdown('</div>', unsafe_allow_html=True)
+
+if uploaded_file is not None:
+    img = Image.open(uploaded_file).convert("RGB")
     st.image(img, caption="Uploaded Image", use_container_width=True)
 
-    if st.button("Run Analysis"):   
+    if st.button("Run Analysis"):
+      with st.spinner("Analyzing leaf... "):   
         img_np = np.array(img)
         img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
 
@@ -319,10 +587,17 @@ if uploaded:
         crop_model, crop_classes = load_crop_model()
         crop, crop_conf = predict(segmented, crop_model, crop_classes)
 
-        st.success(f"🌱 Crop: {crop} ({crop_conf:.2f})")
+        st.success(f"🌱 Crop: {crop} ({crop_conf.item():.2f})")
+        st.progress(float(crop_conf))
         disease_model, disease_classes = load_disease_model(crop)
         disease, disease_conf = predict(img, disease_model, disease_classes)
-        st.error(f"🦠 Disease: {disease} ({disease_conf:.2f})")
+        st.error(f"🦠 Disease: {disease} ({disease_conf.item():.2f})")
+        st.progress(float(disease_conf))
+
+        
+        label = extract_label_parts(disease)
+        label_key = label.title()
+       
 
         if "healthy" in disease.lower():
             st.success("✅ Healthy leaf")
@@ -332,6 +607,24 @@ if uploaded:
         overlay = segmented.copy()
         overlay[disease_mask == 1] = [0, 0, 255]
         overlay = cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB)
-        st.warning(f"🩺 Disease Severity: **{severity:.2f}%**")
+        st.info(f"🩺 Disease Severity: **{severity:.2f}%**")
+        
         st.image(overlay, caption="Diseased pixels (red)", use_container_width=True)
+        info = infoa.get(label_key, {
+        "title": "Unknown condition",
+        "cause": "Pattern does not match known diseases.",
+        "advice": "Consult an agriculture expert."
+        })
+        st.markdown("## 🌿 Disease Insight")
+        st.markdown(
+        f"""
+        <div style='color: blue;'>
+        <b>{info['title']}</b><br><br>
+        <b>Cause:</b> {info['cause']}<br><br>
+        <b>Recommended Action:</b> {info['advice']}<br><br>
+        </div>
+        """,
+        unsafe_allow_html=True
+        ) 
+#------------------------------
         st.stop()

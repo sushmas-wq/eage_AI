@@ -2,6 +2,8 @@
 Complete U-Net Implementation for Leaf Segmentation
 Includes: Model creation, training, inference, visualization, and utilities
 """
+from tensorflow.keras import mixed_precision
+mixed_precision.set_global_policy('mixed_float16')
 
 import os
 import numpy as np
@@ -9,6 +11,7 @@ import cv2
 import matplotlib.pyplot as plt
 from pathlib import Path
 from typing import Tuple, List, Dict
+
 
 # TensorFlow/Keras imports
 import tensorflow as tf
@@ -23,10 +26,8 @@ from sklearn.model_selection import train_test_split
 # ============================================================================
 
 def dice_loss(y_true, y_pred, smooth=1.0):
-    """
-    Dice Loss - Better than BCE for segmentation
-    Emphasizes overlap between prediction and ground truth
-    """
+    """Dice loss function for segmentation"""
+    y_true = tf.cast(y_true, y_pred.dtype) # Ensure same dtype
     y_true_flat = tf.reshape(y_true, [-1])
     y_pred_flat = tf.reshape(y_pred, [-1])
     
@@ -39,6 +40,7 @@ def dice_loss(y_true, y_pred, smooth=1.0):
 
 def dice_coefficient(y_true, y_pred, smooth=1.0):
     """Dice coefficient metric (higher is better)"""
+    y_true = tf.cast(y_true, y_pred.dtype) # Ensure same dtype
     y_true_flat = tf.reshape(y_true, [-1])
     y_pred_flat = tf.reshape(y_pred, [-1])
     
@@ -54,6 +56,7 @@ def combined_loss(y_true, y_pred, bce_weight=0.5, dice_weight=0.5):
     Combined loss: 0.5 * BCE + 0.5 * Dice
     Often gives best results
     """
+    y_true = tf.cast(y_true, y_pred.dtype) # Ensure same dtype
     bce = keras.losses.binary_crossentropy(y_true, y_pred)
     dice = dice_loss(y_true, y_pred)
     return bce_weight * bce + dice_weight * dice
@@ -84,12 +87,12 @@ def conv_block(inputs, filters, kernel_size=3, activation='relu', dropout_rate=0
     return x
 
 
-def create_unet(img_size=256, num_classes=1, filters_start=32, dropout_rate=0.2):
+def create_unet(img_size=128, num_classes=1, filters_start=16, dropout_rate=0.2):
     """
     Create U-Net model for segmentation.
     
     Args:
-        img_size: Input image size (256, 512, etc.)
+        img_size: Input image size (128, 256, etc.)
         num_classes: Number of output classes (1 for binary)
         filters_start: Number of filters in first layer
         dropout_rate: Dropout rate (0-1)
@@ -143,26 +146,25 @@ def create_unet(img_size=256, num_classes=1, filters_start=32, dropout_rate=0.2)
     
     # ========== OUTPUT ==========
     outputs = layers.Conv2D(num_classes, kernel_size=1, activation='sigmoid', 
-                           name='output')(c9)
+                           name='output',dtype='float32')(c9)
     
     model = keras.Model(inputs=inputs, outputs=outputs, name='UNet')
-    
+    lr = 5e-4
+
     # Compile
+    print(f"\nCompiling model with learning rate: {lr}")
     model.compile(
-        optimizer=keras.optimizers.Adam(learning_rate=1e-4),
-        loss=dice_loss,
+        optimizer=keras.optimizers.Adam(learning_rate=lr),
+        loss=dice_loss,#dice_loss,combined_loss,
         metrics=[dice_coefficient, 'binary_accuracy']
     )
-    
     return model
-
-
-def create_unet_compact(img_size=256, num_classes=1):
+def create_unet_compact(img_size=128, num_classes=1):
     """Smaller U-Net for faster training with less data"""
     return create_unet(img_size, num_classes, filters_start=16, dropout_rate=0.3)
 
 
-def create_unet_large(img_size=256, num_classes=1):
+def create_unet_large(img_size=128, num_classes=1):
     """Larger U-Net for maximum accuracy with lots of data"""
     return create_unet(img_size, num_classes, filters_start=64, dropout_rate=0.1)
 
@@ -174,7 +176,7 @@ def create_unet_large(img_size=256, num_classes=1):
 class DataLoader:
     """Load and prepare training data"""
     
-    def __init__(self, img_size=256):
+    def __init__(self, img_size=128):
         self.img_size = img_size
     
     def load_image_mask_pair(self, img_path: str, mask_path: str) -> Tuple[np.ndarray, np.ndarray]:
@@ -270,7 +272,7 @@ class DataAugmentationPipeline:
             fill_mode='reflect'
         )
     
-    def augmented_generator(self, images, masks, batch_size=16, seed=42):
+    def augmented_generator(self, images, masks, batch_size=2, seed=42):
         """
         Generate augmented batches with synchronized transformations.
         
@@ -325,7 +327,7 @@ class UNetTrainer:
         self.history = None
     
     def train(self, X_train, y_train, X_val, y_val, 
-              epochs=10,batch_size=8, use_augmentation=True):
+              epochs=15,batch_size=2, use_augmentation=True):
         """
         Train the model.
         
@@ -438,7 +440,7 @@ class UNetTrainer:
 # ============================================================================
 
 class UNetPredictor:
-    def __init__(self, model_path=None, model=None, img_size=256):
+    def __init__(self, model_path=None, model=None, img_size=128):
         """
         Initialize predictor.
         
@@ -478,6 +480,7 @@ class UNetPredictor:
         
         # Threshold
         binary_mask = (prediction > threshold).astype(np.uint8) * 255
+    
         
         # Resize back to original
         binary_mask = cv2.resize(binary_mask, (original_size[1], original_size[0]))
@@ -560,7 +563,7 @@ if __name__ == "__main__":
     # Paths (modify as needed)
     IMG_DIR = "D:data/images"
     MASK_DIR = "D:/data/masks"
-    IMG_SIZE = 256
+    IMG_SIZE = 128
     
     # Step 1: Create model
     print("Creating model...")
@@ -584,7 +587,7 @@ if __name__ == "__main__":
         history = trainer.train(
             data['X_train'], data['y_train'],
             data['X_val'], data['y_val'],
-            epochs=10,
+            epochs=15,
             batch_size=2,
             use_augmentation=True
         )
